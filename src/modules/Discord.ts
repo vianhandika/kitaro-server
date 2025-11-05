@@ -158,12 +158,17 @@ export const listen = (): void => {
                     if (avatar?.startsWith("a_") === true) ext = "gif";
                     if (bot === true) ub = " [BOT]";
 
+                    const normalizedContent = (typeof content === "string" && content.trim().length > 0) ? content : "** **";
+                    if (typeof content === "string" && content.trim().length === 0) {
+                        logger.debug("Content is empty; using placeholder to satisfy Discord webhook.");
+                    }
+
                     const things: Things = {
                         avatarURL:
                             (avatar !== null && avatar !== undefined && avatar !== "")
                                 ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}`
                                 : `https://cdn.discordapp.com/embed/avatars/${(BigInt(id) >> 22n) % 6n}.png`,
-                        content: content ?? "** **\n",
+                        content: normalizedContent,
                         url: webhookUrl,
                         username: `${username}${discriminator ?? ""}${enableBotIndicator ? ub : ""}`
                     };
