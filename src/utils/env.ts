@@ -16,11 +16,12 @@ export const headers = {
 };
 
 export const channelWebhookMap = new Map<string, string>();
-for (let i = 0; i < channelsId.length; i++) {
-    if (i < webhooksUrl.length) {
-        channelWebhookMap.set(channelsId[i], webhooksUrl[i]);
+for (const [i, channelId] of channelsId.entries()) {
+    const webhook = webhooksUrl[i];
+    if (webhook === undefined) {
+        console.warn(`Warning: Channel ${channelId} at index ${i} has no matching webhook URL`);
     } else {
-        console.warn(`Warning: Channel ${channelsId[i]} at index ${i} has no matching webhook URL`);
+        channelWebhookMap.set(channelId, webhook);
     }
 }
 

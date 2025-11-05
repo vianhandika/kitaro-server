@@ -7,7 +7,7 @@ export function parseEnvValue(str: string): string[] {
     }
     
     return cleaned
-        .split(/[,;]/)
+        .split(/[,;]/u)
         .map(x => x.trim())
         .filter(x => x.length > 0);
 }

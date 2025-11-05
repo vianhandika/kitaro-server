@@ -111,13 +111,15 @@ export const listen = (): void => {
                         resumeGatewayUrl: `${d.resume_gateway_url}?v=10&encoding=json`,
                         seq: s
                     };
-                    logger.info(`Logged in as ${d.user.username}${d.user.discriminator && d.user.discriminator !== "0" ? `#${d.user.discriminator}` : ""}`);
+                    logger.info(
+                        `Logged in as ${d.user.username}${(d.user.discriminator !== null && d.user.discriminator !== undefined && d.user.discriminator !== "0") ? `#${d.user.discriminator}` : ""}`
+                    );
                 }
 
                 if (t === GatewayDispatchEvents.MessageCreate && channelsId.includes(d.channel_id)) {
                     const webhookUrl = channelWebhookMap.get(d.channel_id);
                     
-                    if (!webhookUrl) {
+                    if (webhookUrl === undefined) {
                         logger.warning(`No webhook URL mapped for channel ${d.channel_id}`);
                         break;
                     }
@@ -131,12 +133,12 @@ export const listen = (): void => {
 
                     discriminator = discriminator === "0" ? null : `#${discriminator}`;
 
-                    if (avatar?.startsWith("a_") ?? false) ext = "gif";
-                    if (bot ?? false) ub = " [BOT]";
+                    if (avatar?.startsWith("a_") === true) ext = "gif";
+                    if (bot === true) ub = " [BOT]";
 
                     const things: Things = {
                         avatarURL:
-                            avatar ?? ""
+                            (avatar !== null && avatar !== undefined && avatar !== "")
                                 ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}`
                                 : `https://cdn.discordapp.com/embed/avatars/${(BigInt(id) >> 22n) % 6n}.png`,
                         content: content ?? "** **\n",
@@ -152,7 +154,7 @@ export const listen = (): void => {
 
                         const tes: DiscordWebhook = (await webhookData.json()) as DiscordWebhook;
                         let ext2 = "jpg";
-                        if (tes.avatar?.startsWith("a_") ?? false) ext2 = "gif";
+                        if (tes.avatar?.startsWith("a_") === true) ext2 = "gif";
                         things.avatarURL = `https://cdn.discordapp.com/avatars/${tes.id}/${tes.avatar}.${ext2}`;
                         things.username = tes.name;
                     }
