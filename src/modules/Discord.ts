@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 /* eslint-disable id-length */
 import process from "node:process";
 import { setInterval } from "node:timers";
@@ -8,7 +7,7 @@ import { WebhookClient, GatewayDispatchEvents, GatewayOpcodes } from "discord.js
 
 import Websocket from "ws";
 
-import type { DiscordWebhook, Things, WebsocketTypes } from "../typings/index.js";
+import type { DiscordWebhook, Things } from "../typings/index.js";
 import { channelsId, discordToken, channelWebhookMap, enableBotIndicator, headers, useWebhookProfile } from "../utils/env.js";
 import logger from "../utils/logger.js";
 
@@ -17,34 +16,39 @@ export const executeWebhook = async (things: Things): Promise<void> => {
     await wsClient.send(things);
 };
 
-let ws: WebsocketTypes;
+let ws: Websocket;
 let resumeData = {
     sessionId: "",
     resumeGatewayUrl: "",
     seq: 0
 };
 let authenticated = false;
+let attemptingResume = false;
 
 export const listen = (): void => {
+    // reset state for new connection
+    authenticated = false;
+    // close previous connection if any
+    try {
+        if (ws !== undefined) {
+            // remove listeners and close gracefully
+            ws.removeAllListeners?.();
+            ws.close?.();
+        }
+    } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        logger.debug(`Failed to close previous WebSocket: ${msg}`);
+    }
+
     if (resumeData.sessionId && resumeData.resumeGatewayUrl) {
         logger.info("Resuming session...");
         logger.debug(`Session ID: ${resumeData.sessionId}`);
         logger.debug(`Resume Gateway URL: ${resumeData.resumeGatewayUrl}`);
         logger.debug(`Sequence: ${resumeData.seq}`);
-
+        attemptingResume = true;
         ws = new Websocket(resumeData.resumeGatewayUrl);
-        ws.send(
-            JSON.stringify({
-                op: 6,
-                d: {
-                    token: discordToken,
-                    // eslint-disable-next-line typescript/naming-convention
-                    session_id: resumeData.sessionId,
-                    seq: resumeData.seq
-                }
-            })
-        );
     } else {
+        attemptingResume = false;
         ws = new Websocket("wss://gateway.discord.gg/?v=10&encoding=json");
     }
 
@@ -77,6 +81,21 @@ export const listen = (): void => {
                 }, d.heartbeat_interval);
 
                 logger.info("Heartbeat started.");
+                // If resuming, send resume payload AFTER hello/heartbeat setup
+                if (attemptingResume) {
+                    ws.send(
+                        JSON.stringify({
+                            op: 6,
+                            d: {
+                                token: discordToken,
+                                // eslint-disable-next-line typescript/naming-convention
+                                session_id: resumeData.sessionId,
+                                seq: resumeData.seq
+                            }
+                        })
+                    );
+                    logger.info("Attempting to resume session...");
+                }
                 break;
             case GatewayOpcodes.Heartbeat:
                 logger.debug("Discord requested an immediate heartbeat.");
@@ -89,7 +108,8 @@ export const listen = (): void => {
                 logger.debug("Heartbeat sent.");
                 break;
             case GatewayOpcodes.HeartbeatAck:
-                if (!authenticated) {
+                // Only identify on fresh connections, not during resume
+                if (!authenticated && !attemptingResume) {
                     authenticated = true;
                     ws.send(
                         JSON.stringify({
@@ -111,6 +131,8 @@ export const listen = (): void => {
                         resumeGatewayUrl: `${d.resume_gateway_url}?v=10&encoding=json`,
                         seq: s
                     };
+                    authenticated = true;
+                    attemptingResume = false;
                     logger.info(
                         `Logged in as ${d.user.username}${(d.user.discriminator !== null && d.user.discriminator !== undefined && d.user.discriminator !== "0") ? `#${d.user.discriminator}` : ""}`
                     );
