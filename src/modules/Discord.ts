@@ -1,6 +1,7 @@
 /* eslint-disable id-length */
+import type { Buffer } from "node:buffer";
 import process from "node:process";
-import { setInterval } from "node:timers";
+import { setInterval, clearInterval } from "node:timers";
 
 import type { APIAttachment, APIStickerItem, GatewayReceivePayload } from "discord.js";
 import { WebhookClient, GatewayDispatchEvents, GatewayOpcodes } from "discord.js";
@@ -24,6 +25,7 @@ let resumeData = {
 };
 let authenticated = false;
 let attemptingResume = false;
+let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
 
 export const listen = (): void => {
     // reset state for new connection
@@ -38,6 +40,10 @@ export const listen = (): void => {
     } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         logger.debug(`Failed to close previous WebSocket: ${msg}`);
+    }
+    if (heartbeatInterval !== undefined) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = undefined;
     }
 
     if (resumeData.sessionId && resumeData.resumeGatewayUrl) {
@@ -69,7 +75,7 @@ export const listen = (): void => {
                         d: s
                     })
                 );
-                setInterval(() => {
+                heartbeatInterval = setInterval(() => {
                     ws.send(
                         JSON.stringify({
                             op: 1,
@@ -222,5 +228,18 @@ export const listen = (): void => {
                 logger.warning("Unhandled opcode:", op);
                 break;
         }
+    });
+
+    ws.on("close", (code: number, reason: Buffer) => {
+        logger.warning(`WebSocket closed: code=${code} reason=${reason.toString()}`);
+        if (heartbeatInterval !== undefined) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = undefined;
+        }
+        listen();
+    });
+
+    ws.on("error", (err: Error) => {
+        logger.error(`WebSocket error: ${err.message}`);
     });
 };
