@@ -7,7 +7,7 @@
     "scripts": {
         "build": "npm run lint && npm run compile",
         "compile": "tsc --build tsconfig.json",
-        "lint": "eslint . --cache --cache-file .eslintcache",
+        "lint": "eslint . --cache --cache-file .eslintcache --no-error-on-unmatched-pattern",
         "lint:fix": "eslint . --cache --cache-file .eslintcache --fix",
         "start": "node --es-module-specifier-resolution=node .",
         "start:dev": "rimraf ./dist && tsc-watch --onSuccess \"node --es-module-specifier-resolution=node .\""
@@ -51,9 +51,11 @@
     "dependencies": {
         "@eslint/compat": "^1.2.3",
         "@ptkdev/logger": "^1.8.0",
+        "decimal.js": "^10.6.0",
         "discord.js": "^14.24.2",
         "dotenv": "^17.2.3",
         "jsonfile": "^6.2.0",
+        "node-binance-api": "^1.0.18",
         "node-fetch": "^3.3.2",
         "tsc-watch": "^7.2.0",
         "ws": "^8.18.3"

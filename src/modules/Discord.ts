@@ -9,7 +9,8 @@ import { WebhookClient, GatewayDispatchEvents, GatewayOpcodes } from "discord.js
 import Websocket from "ws";
 
 import type { DiscordWebhook, Things } from "../typings/index.js";
-import { channelsId, discordToken, channelWebhookMap, enableBotIndicator, headers, useWebhookProfile } from "../utils/env.js";
+import { channelsId, discordToken, channelWebhookMap, enableBotIndicator, headers, useWebhookProfile, scalpReversalsChannelId, scalpSide, scalpSizeUsd, scalpTpPct, scalpSlPct, scalpDcaSteps } from "../utils/env.js";
+import { placeDcaStrategyUsd } from "../utils/binance.js";
 import logger from "../utils/logger.js";
 
 export const executeWebhook = async (things: Things): Promise<void> => {
@@ -169,44 +170,86 @@ export const listen = (): void => {
                         logger.debug("Content is empty; using placeholder to satisfy Discord webhook.");
                     }
 
-                    const things: Things = {
-                        avatarURL:
-                            (avatar !== null && avatar !== undefined && avatar !== "")
-                                ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}`
-                                : `https://cdn.discordapp.com/embed/avatars/${(BigInt(id) >> 22n) % 6n}.png`,
-                        content: normalizedContent,
-                        url: webhookUrl,
-                        username: `${username}${discriminator ?? ""}${enableBotIndicator ? ub : ""}`
-                    };
+                    // Build aggregated text for parsing
+                    const embedText = Array.isArray(embeds) ? embeds.map((e: any) => {
+                        const parts: string[] = [];
+                        if (typeof e.title === "string") parts.push(e.title);
+                        if (typeof e.description === "string") parts.push(e.description);
+                        if (Array.isArray(e.fields)) {
+                            for (const f of e.fields) {
+                                const name = typeof f.name === "string" ? f.name : "";
+                                const value = typeof f.value === "string" ? f.value : "";
+                                if (name || value) parts.push(`${name}${name && value ? ": " : ""}${value}`);
+                            }
+                        }
+                        return parts.join("\n");
+                    }).join("\n") : "";
 
-                    if (useWebhookProfile) {
-                        const webhookData = await fetch(webhookUrl, {
-                            method: "GET",
-                            headers
-                        });
+                    const aggregateText = [normalizedContent, embedText].filter(Boolean).join("\n");
 
-                        const tes: DiscordWebhook = (await webhookData.json()) as DiscordWebhook;
-                        let ext2 = "jpg";
-                        if (tes.avatar?.startsWith("a_") === true) ext2 = "gif";
-                        things.avatarURL = `https://cdn.discordapp.com/avatars/${tes.id}/${tes.avatar}.${ext2}`;
-                        things.username = tes.name;
+                    // Parse Asset, RSI, Funding Rate
+                    const assetMatch = aggregateText.match(/Asset:\s*([A-Z0-9_\-]+USDT)/i) || aggregateText.match(/\b([A-Z0-9_\-]+USDT)\b/);
+                    const rsiMatch = aggregateText.match(/RSI:\s*([0-9]+(?:\.[0-9]+)?)/i);
+                    const frMatch = aggregateText.match(/Funding\s*Rate:\s*([-+]?\d*\.?\d+)%?/i);
+
+                    const isScalpChannel = typeof scalpReversalsChannelId === "string" && scalpReversalsChannelId !== "" && d.channel_id === scalpReversalsChannelId;
+                    const hasAlertData = assetMatch !== null && rsiMatch !== null && frMatch !== null;
+
+                    if (isScalpChannel && hasAlertData) {
+                        const symbol = assetMatch![1].toUpperCase();
+                        const rsiVal = Number(rsiMatch![1]);
+                        const fundingRate = Number(frMatch![1]);
+                        const startedAt = new Date().toISOString();
+                        logger.info(`🧭 Alert detected @ ${startedAt} | symbol=${symbol} rsi=${rsiVal} fr=${fundingRate}`);
+                        try {
+                            await placeDcaStrategyUsd(symbol, scalpSide, scalpSizeUsd, scalpDcaSteps, scalpTpPct, scalpSlPct);
+                            logger.info(`Executed DCA strategy for ${symbol} (${scalpSide}, $${scalpSizeUsd})`);
+                        } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            logger.error(`Failed to execute strategy for ${symbol}: ${message}`);
+                        }
+                        // Do not mirror this message
+                        break;
                     }
+
+                    // const things: Things = {
+                    //     avatarURL:
+                    //         (avatar !== null && avatar !== undefined && avatar !== "")
+                    //             ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}`
+                    //             : `https://cdn.discordapp.com/embed/avatars/${(BigInt(id) >> 22n) % 6n}.png`,
+                    //     content: normalizedContent,
+                    //     url: webhookUrl,
+                    //     username: `${username}${discriminator ?? ""}${enableBotIndicator ? ub : ""}`
+                    // };
+
+                    // if (useWebhookProfile) {
+                    //     const webhookData = await fetch(webhookUrl, {
+                    //         method: "GET",
+                    //         headers
+                    //     });
+
+                    //     const tes: DiscordWebhook = (await webhookData.json()) as DiscordWebhook;
+                    //     let ext2 = "jpg";
+                    //     if (tes.avatar?.startsWith("a_") === true) ext2 = "gif";
+                    //     things.avatarURL = `https://cdn.discordapp.com/avatars/${tes.id}/${tes.avatar}.${ext2}`;
+                    //     things.username = tes.name;
+                    // }
 
                      
-                    if (embeds.length > 0) {
-                        things.embeds = embeds;
-                    } else if (sticker_items) {
-                        things.files = sticker_items.map((a: APIStickerItem) => `https://media.discordapp.net/stickers/${a.id}.webp`);
-                    } else if (attachments.length > 0) {
-                        const fileSizeInBytes = Math.max(...attachments.map((a: APIAttachment) => a.size));
-                        const fileSizeInMegabytes = fileSizeInBytes / (1_024 * 1_024);
-                        if (fileSizeInMegabytes < 8) {
-                            things.files = attachments.map((a: APIAttachment) => a.url);
-                        } else {
-                            things.content += attachments.map((a: APIAttachment) => a.url).join("\n");
-                        }
-                    }
-                    await executeWebhook(things);
+                    // if (embeds.length > 0) {
+                    //     things.embeds = embeds;
+                    // } else if (sticker_items) {
+                    //     things.files = sticker_items.map((a: APIStickerItem) => `https://media.discordapp.net/stickers/${a.id}.webp`);
+                    // } else if (attachments.length > 0) {
+                    //     const fileSizeInBytes = Math.max(...attachments.map((a: APIAttachment) => a.size));
+                    //     const fileSizeInMegabytes = fileSizeInBytes / (1_024 * 1_024);
+                    //     if (fileSizeInMegabytes < 8) {
+                    //         things.files = attachments.map((a: APIAttachment) => a.url);
+                    //     } else {
+                    //         things.content += attachments.map((a: APIAttachment) => a.url).join("\n");
+                    //     }
+                    // }
+                    // await executeWebhook(things);
                 }
                 break;
             case GatewayOpcodes.Reconnect: {
