@@ -176,7 +176,10 @@ export async function placeDcaStrategyUsd(
         logger.info(`🎯 TP LIMIT active → price=${tpLimit} qty=${totalQty}`);
       } else {
         const offset = tickSize;
-        const adjustedTrigger = exitSide === "BUY" ? dcaTrigger + offset : dcaTrigger - offset;
+        const adjustedTriggerBase = exitSide === "BUY" ? dcaTrigger + offset : dcaTrigger - offset;
+        const adjustedTriggerNum = roundToTick(adjustedTriggerBase, tickSize);
+        const adjustedTrigger = Number(adjustedTriggerNum.toFixed(tickDecimals));
+
         const tpBody2 = { type: "STOP", side: exitSide, symbol, stopPrice: adjustedTrigger, price: tpLimit, quantity: totalQty, timeInForce: "GTC", reduceOnly: true, workingType: "MARK_PRICE" };
         logger.info(`➡️  Submit TP STOP-LIMIT: ${JSON.stringify(tpBody2)} (mark=${curMark})`);
         await client.futuresOrder("STOP", exitSide, symbol, totalQty, tpLimit, {
