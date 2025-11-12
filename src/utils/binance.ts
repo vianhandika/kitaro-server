@@ -87,6 +87,14 @@ export async function placeDcaStrategyUsd(
   const qty = Number(qtyRounded.toFixed(stepDecimals));
   logger.info(`📊 ${symbol} mark price: ${price} | tick size: ${tickSize} (dec=${tickDecimals}) | step size: ${stepSize} (dec=${stepDecimals}) | minQty=${minQty}`);
 
+  // Read DCA size multipliers from ENV (e.g., "1.5,2.25,3.4")
+  const dcaSizeRaw = (process.env.SCALP_DCA_SIZE ?? "").trim();
+  const dcaMultipliers: number[] = dcaSizeRaw
+    ? dcaSizeRaw.split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    : [];
+
   // Market entry
   if (side === "BUY") {
     const body = { type: "MARKET", side, symbol, quantity: qty };
@@ -126,8 +134,13 @@ export async function placeDcaStrategyUsd(
 
   for (let i = 0; i < entries.length; i++) {
     const px = entries[i];
-    totalQty = totalQty + qty;
-    totalCost = totalCost + (px * qty);
+    // Determine leg quantity: base uses initial qty; DCA legs use env multipliers
+    const legQtyBase = i === 0 ? qty : qty * (dcaMultipliers[i - 1] ?? 1);
+    const legQtyRounded = roundToStep(legQtyBase, stepSize);
+    const legQty = Number(legQtyRounded.toFixed(stepDecimals));
+
+    totalQty = totalQty + legQty;
+    totalCost = totalCost + (px * legQty);
     const priceRoundedNum = roundToTick(px, tickSize);
     const priceRounded = Number(priceRoundedNum.toFixed(tickDecimals));
     // Recalculate average entry after this DCA and plan TP accordingly
@@ -137,12 +150,12 @@ export async function placeDcaStrategyUsd(
     const tpLimit = Number(tpLimitNum.toFixed(tickDecimals));
 
     if (i > 0) {
-      const body = { type: "LIMIT", side, symbol, quantity: qty, price: priceRounded, timeInForce: "GTC" };
+      const body = { type: "LIMIT", side, symbol, quantity: legQty, price: priceRounded, timeInForce: "GTC" };
       logger.info(`➡️  Submit DCA LIMIT: ${JSON.stringify(body)}`);
-      await client.futuresOrder("LIMIT", side, symbol, qty, priceRounded, {
+      await client.futuresOrder("LIMIT", side, symbol, legQty, priceRounded, {
         timeInForce: "GTC",
       });
-      logger.info(`📥 DCA ${i} limit placed @ ${priceRounded}`);
+      logger.info(`📥 DCA ${i} limit placed @ ${priceRounded} qty=${legQty}`);
     }
 
     // Plan TP for DCA as STOP-LIMIT that triggers at the DCA price; keep one TP active
