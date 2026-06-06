@@ -41,7 +41,7 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
 
     // a-only: check if Grade line contains "A"
     if (g === "a-only") {
-        if (!/\*\*Grade:.*a/i.test(description)) {
+        if (!/\*\*grade:.*a/iu.test(description)) {
             logger.debug("Alert filtered out: Grade does not contain A (group=a-only)");
             return false;
         }
@@ -243,6 +243,7 @@ export const listen = (): void => {
                     const firstEmbedDesc = embeds.length > 0 ? embeds[0].description : undefined;
 
                     // Iterate all matching rules (supports same channel → multiple webhooks/filters)
+                    /* eslint-disable no-await-in-loop */
                     for (const rule of rules) {
                         // Per-group filter
                         if (!shouldSendAlert(firstEmbedDesc, rule.group)) {
@@ -291,6 +292,7 @@ export const listen = (): void => {
                         logger.debug(`Sending to webhook (group=${rule.group}): ${JSON.stringify(things)}`);
                         await executeWebhook(things);
                     }
+                    /* eslint-enable no-await-in-loop */
                 }
                 break;
             case GatewayOpcodes.Reconnect: {

@@ -41,9 +41,12 @@ if (filterGroups.length > channelsId.length) {
     console.warn(`Warning: ${filterGroups.length - channelsId.length} extra filter group(s) will not be used`);
 }
 
-/** Returns all (webhook, group) pairs for a given channel ID. Supports duplicate channel IDs. */
-export const getChannelRules = (channelId: string): Array<{ webhook: string; group: string }> => {
-    const rules: Array<{ webhook: string; group: string }> = [];
+/**
+ * Returns all (webhook, group) pairs for a given channel ID.
+ * Supports duplicate channel IDs.
+ */
+export const getChannelRules = (channelId: string): { webhook: string; group: string }[] => {
+    const rules: { webhook: string; group: string }[] = [];
     for (const [i, id] of channelsId.entries()) {
         if (id === channelId && webhooksUrl[i] !== undefined) {
             rules.push({
