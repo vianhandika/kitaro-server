@@ -17,13 +17,13 @@ export const executeWebhook = async (things: Things): Promise<void> => {
     await wsClient.send(things);
 };
 
-type FilterGroup = "premium" | "a-only" | "grade-only" | "no-filter";
+type FilterGroup = "a-only" | "grade-only" | "no-filter" | "premium";
 
 /**
  * Per-group alert filtering:
- *   premium    — Grade >= ENABLE_GRADE  +  Bias/Swing aligned
+ *   premium    — Grade \>= ENABLE_GRADE  +  Bias/Swing aligned
  *   a-only     — Grade letter is "A"
- *   grade-only — Grade >= ENABLE_GRADE only
+ *   grade-only — Grade \>= ENABLE_GRADE only
  *   no-filter  — pass through (no filter)
  */
 const shouldSendAlert = (description: string | undefined, group: string | undefined): boolean => {
@@ -35,9 +35,9 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
 
     // Parse grade: captures both the letter and the number
     // Example: "**Grade:** B · 4.6" → letter="B", number=4.6
-    const gradeMatch = /\*\*Grade:\*\*\s*([A-F])\s*·\s*([\d.]+)/iu.exec(description);
-    const gradeLetter = gradeMatch === null ? null : gradeMatch[1].toUpperCase();
-    const gradeNumber = gradeMatch === null ? null : Number.parseFloat(gradeMatch[2]);
+    const gradeMatch = /\*\*Grade:\*\*\s*(?<letter>[A-F])\s*·\s*(?<number>[\d.]+)/iu.exec(description);
+    const gradeLetter = gradeMatch?.groups?.letter === undefined ? null : gradeMatch.groups.letter.toUpperCase();
+    const gradeNumber = gradeMatch?.groups?.number === undefined ? null : Number.parseFloat(gradeMatch.groups.number);
 
     // a-only: only check letter
     if (g === "a-only") {
@@ -67,11 +67,11 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
 
     // premium only: also enforce bias/swing alignment
     if (g === "premium") {
-        const biasMatch = /\*\*Bias:\*\*\s*\S+\s*(Long|Short)/iu.exec(description);
-        const swingMatch = /\*\*Swing:\*\*\s*\S+\s*(Bullish|Bearish)/iu.exec(description);
+        const biasMatch = /\*\*Bias:\*\*\s*\S+\s*(?<bias>Long|Short)/iu.exec(description);
+        const swingMatch = /\*\*Swing:\*\*\s*\S+\s*(?<swing>Bullish|Bearish)/iu.exec(description);
 
-        const bias = biasMatch === null ? null : biasMatch[1].toLowerCase();
-        const swing = swingMatch === null ? null : swingMatch[1].toLowerCase();
+        const bias = biasMatch?.groups?.bias === undefined ? null : biasMatch.groups.bias.toLowerCase();
+        const swing = swingMatch?.groups?.swing === undefined ? null : swingMatch.groups.swing.toLowerCase();
 
         if (bias === null || swing === null) {
             logger.debug("Alert filter: missing bias/swing in description, skipping.");
@@ -278,7 +278,7 @@ export const listen = (): void => {
                         }
                     }
                     // Per-group filter: premium / a-only / grade-only / no-filter
-                    const firstEmbedDesc = embeds.length > 0 ? embeds[0].description : undefined;
+                    const { description: firstEmbedDesc } = embeds.length > 0 ? embeds[0] : { description: undefined };
                     const group = channelFilterMap.get(d.channel_id);
                     if (!shouldSendAlert(firstEmbedDesc, group)) {
                         logger.debug("Alert skipped by filter.");
