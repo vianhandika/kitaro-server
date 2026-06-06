@@ -9,7 +9,7 @@ import { WebhookClient, GatewayDispatchEvents, GatewayOpcodes } from "discord.js
 import Websocket from "ws";
 
 import type { DiscordWebhook, Things } from "../typings/index.js";
-import { channelsId, discordToken, channelWebhookMap, channelFilterMap, enableBotIndicator, enableGrade, headers, useWebhookProfile } from "../utils/env.js";
+import { channelsId, discordToken, getChannelRules, enableBotIndicator, enableGrade, headers, useWebhookProfile } from "../utils/env.js";
 import logger from "../utils/logger.js";
 
 export const executeWebhook = async (things: Things): Promise<void> => {
@@ -216,10 +216,10 @@ export const listen = (): void => {
                 }
 
                 if (t === GatewayDispatchEvents.MessageCreate && channelsId.includes(d.channel_id)) {
-                    const webhookUrl = channelWebhookMap.get(d.channel_id);
-                    
-                    if (webhookUrl === undefined) {
-                        logger.warning(`No webhook URL mapped for channel ${d.channel_id}`);
+                    const rules = getChannelRules(d.channel_id);
+
+                    if (rules.length === 0) {
+                        logger.warning(`No rules mapped for channel ${d.channel_id}`);
                         break;
                     }
 
@@ -240,53 +240,57 @@ export const listen = (): void => {
                         logger.debug("Content is empty; using placeholder to satisfy Discord webhook.");
                     }
 
-                    const things: Things = {
-                        avatarURL:
-                            (avatar !== null && avatar !== undefined && avatar !== "")
-                                ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}`
-                                : `https://cdn.discordapp.com/embed/avatars/${(BigInt(id) >> 22n) % 6n}.png`,
-                        content: normalizedContent,
-                        url: webhookUrl,
-                        username: `${username}${discriminator ?? ""}${enableBotIndicator ? ub : ""}`
-                    };
+                    const firstEmbedDesc = embeds.length > 0 ? embeds[0].description : undefined;
 
-                    if (useWebhookProfile) {
-                        const webhookData = await fetch(webhookUrl, {
-                            method: "GET",
-                            headers
-                        });
-
-                        const tes: DiscordWebhook = (await webhookData.json()) as DiscordWebhook;
-                        let ext2 = "jpg";
-                        if (tes.avatar?.startsWith("a_") === true) ext2 = "gif";
-                        things.avatarURL = `https://cdn.discordapp.com/avatars/${tes.id}/${tes.avatar}.${ext2}`;
-                        things.username = tes.name;
-                    }
-
-                     
-                    if (embeds.length > 0) {
-                        things.embeds = embeds;
-                    } else if (sticker_items) {
-                        things.files = sticker_items.map((a: APIStickerItem) => `https://media.discordapp.net/stickers/${a.id}.webp`);
-                    } else if (attachments.length > 0) {
-                        const fileSizeInBytes = Math.max(...attachments.map((a: APIAttachment) => a.size));
-                        const fileSizeInMegabytes = fileSizeInBytes / (1_024 * 1_024);
-                        if (fileSizeInMegabytes < 8) {
-                            things.files = attachments.map((a: APIAttachment) => a.url);
-                        } else {
-                            things.content += attachments.map((a: APIAttachment) => a.url).join("\n");
+                    // Iterate all matching rules (supports same channel → multiple webhooks/filters)
+                    for (const rule of rules) {
+                        // Per-group filter
+                        if (!shouldSendAlert(firstEmbedDesc, rule.group)) {
+                            logger.debug(`Alert skipped by filter (group=${rule.group}).`);
+                            continue;
                         }
-                    }
-                    // Per-group filter: premium / a-only / grade-only / no-filter
-                    const { description: firstEmbedDesc } = embeds.length > 0 ? embeds[0] : { description: undefined };
-                    const group = channelFilterMap.get(d.channel_id);
-                    if (!shouldSendAlert(firstEmbedDesc, group)) {
-                        logger.debug("Alert skipped by filter.");
-                        break;
-                    }
 
-                    logger.debug(`Sending to webhook: ${JSON.stringify(things)}`);
-                    await executeWebhook(things);
+                        const things: Things = {
+                            avatarURL:
+                                (avatar !== null && avatar !== undefined && avatar !== "")
+                                    ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}`
+                                    : `https://cdn.discordapp.com/embed/avatars/${(BigInt(id) >> 22n) % 6n}.png`,
+                            content: normalizedContent,
+                            url: rule.webhook,
+                            username: `${username}${discriminator ?? ""}${enableBotIndicator ? ub : ""}`
+                        };
+
+                        if (useWebhookProfile) {
+                            const webhookData = await fetch(rule.webhook, {
+                                method: "GET",
+                                headers
+                            });
+
+                            const tes: DiscordWebhook = (await webhookData.json()) as DiscordWebhook;
+                            let ext2 = "jpg";
+                            if (tes.avatar?.startsWith("a_") === true) ext2 = "gif";
+                            things.avatarURL = `https://cdn.discordapp.com/avatars/${tes.id}/${tes.avatar}.${ext2}`;
+                            things.username = tes.name;
+                        }
+
+                         
+                        if (embeds.length > 0) {
+                            things.embeds = embeds;
+                        } else if (sticker_items) {
+                            things.files = sticker_items.map((a: APIStickerItem) => `https://media.discordapp.net/stickers/${a.id}.webp`);
+                        } else if (attachments.length > 0) {
+                            const fileSizeInBytes = Math.max(...attachments.map((a: APIAttachment) => a.size));
+                            const fileSizeInMegabytes = fileSizeInBytes / (1_024 * 1_024);
+                            if (fileSizeInMegabytes < 8) {
+                                things.files = attachments.map((a: APIAttachment) => a.url);
+                            } else {
+                                things.content += attachments.map((a: APIAttachment) => a.url).join("\n");
+                            }
+                        }
+
+                        logger.debug(`Sending to webhook (group=${rule.group}): ${JSON.stringify(things)}`);
+                        await executeWebhook(things);
+                    }
                 }
                 break;
             case GatewayOpcodes.Reconnect: {
