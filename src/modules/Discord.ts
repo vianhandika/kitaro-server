@@ -9,7 +9,7 @@ import { WebhookClient, GatewayDispatchEvents, GatewayOpcodes } from "discord.js
 import Websocket from "ws";
 
 import type { DiscordWebhook, Things } from "../typings/index.js";
-import { channelsId, discordToken, channelWebhookMap, enableBotIndicator, enableGrade, enableSameBiasSwing, headers, useWebhookProfile } from "../utils/env.js";
+import { channelsId, discordToken, channelWebhookMap, channelFilterMap, enableBotIndicator, enableGrade, headers, useWebhookProfile } from "../utils/env.js";
 import logger from "../utils/logger.js";
 
 export const executeWebhook = async (things: Things): Promise<void> => {
@@ -17,51 +17,74 @@ export const executeWebhook = async (things: Things): Promise<void> => {
     await wsClient.send(things);
 };
 
+type FilterGroup = "premium" | "a-only" | "grade-only" | "no-filter";
+
 /**
- * Parses the embed description to check if this alert should be forwarded.
- * Controlled by env vars:
- *   - ENABLE_GRADE (number): minimum grade threshold; 0 = skip grade filter
- *   - ENABLE_SAME_BIAS_SWING (yes/no): enforce Bias↔Swing alignment
+ * Per-group alert filtering:
+ *   premium    — Grade >= ENABLE_GRADE  +  Bias/Swing aligned
+ *   a-only     — Grade letter is "A"
+ *   grade-only — Grade >= ENABLE_GRADE only
+ *   no-filter  — pass through (no filter)
  */
-const shouldSendAlert = (description: string | undefined): boolean => {
-    // If both filters are disabled, allow everything
-    if (enableGrade === 0 && !enableSameBiasSwing) return true;
+const shouldSendAlert = (description: string | undefined, group: string | undefined): boolean => {
+    const g: FilterGroup = (group ?? "no-filter") as FilterGroup;
+
+    // no-filter: allow everything
+    if (g === "no-filter") return true;
     if (description === undefined) return false;
 
-    const gradeMatch = /\*\*Grade:\*\*\s*\S+\s*·\s*([\d.]+)/iu.exec(description);
-    const biasMatch = /\*\*Bias:\*\*\s*\S+\s*(Long|Short)/iu.exec(description);
-    const swingMatch = /\*\*Swing:\*\*\s*\S+\s*(Bullish|Bearish)/iu.exec(description);
+    // Parse grade: captures both the letter and the number
+    // Example: "**Grade:** B · 4.6" → letter="B", number=4.6
+    const gradeMatch = /\*\*Grade:\*\*\s*([A-F])\s*·\s*([\d.]+)/iu.exec(description);
+    const gradeLetter = gradeMatch === null ? null : gradeMatch[1].toUpperCase();
+    const gradeNumber = gradeMatch === null ? null : Number.parseFloat(gradeMatch[2]);
 
-    const grade = gradeMatch === null ? null : Number.parseFloat(gradeMatch[1]);
-    const bias = biasMatch === null ? null : biasMatch[1].toLowerCase();
-    const swing = swingMatch === null ? null : swingMatch[1].toLowerCase();
-
-    // Grade filter (only when enabled)
-    if (enableGrade > 0) {
-        if (grade === null) {
-            logger.debug("Alert filter: missing grade in description, skipping.");
+    // a-only: only check letter
+    if (g === "a-only") {
+        if (gradeLetter !== "A") {
+            logger.debug(`Alert filtered out: Grade letter ${gradeLetter ?? "?"} is not A (group=a-only)`);
             return false;
         }
-        if (grade < enableGrade) {
-            logger.debug(`Alert filtered out: Grade ${grade} < ${enableGrade}`);
-            return false;
+        logger.debug("Alert passed filter: Grade letter A (group=a-only)");
+        return true;
+    }
+
+    // premium & grade-only: both need gradeNumber >= ENABLE_GRADE
+    if (g === "premium" || g === "grade-only") {
+        if (enableGrade <= 0) {
+            logger.debug("Alert filter: ENABLE_GRADE is 0, grade check skipped.");
+        } else {
+            if (gradeNumber === null) {
+                logger.debug("Alert filter: missing grade in description, skipping.");
+                return false;
+            }
+            if (gradeNumber < enableGrade) {
+                logger.debug(`Alert filtered out: Grade ${gradeNumber} < ${enableGrade} (group=${g})`);
+                return false;
+            }
         }
     }
 
-    // Bias/Swing alignment filter (only when enabled)
-    if (enableSameBiasSwing) {
+    // premium only: also enforce bias/swing alignment
+    if (g === "premium") {
+        const biasMatch = /\*\*Bias:\*\*\s*\S+\s*(Long|Short)/iu.exec(description);
+        const swingMatch = /\*\*Swing:\*\*\s*\S+\s*(Bullish|Bearish)/iu.exec(description);
+
+        const bias = biasMatch === null ? null : biasMatch[1].toLowerCase();
+        const swing = swingMatch === null ? null : swingMatch[1].toLowerCase();
+
         if (bias === null || swing === null) {
             logger.debug("Alert filter: missing bias/swing in description, skipping.");
             return false;
         }
         const aligned = (bias === "long" && swing === "bullish") || (bias === "short" && swing === "bearish");
         if (!aligned) {
-            logger.debug(`Alert filtered out: Bias=${bias}, Swing=${swing} not aligned`);
+            logger.debug(`Alert filtered out: Bias=${bias}, Swing=${swing} not aligned (group=premium)`);
             return false;
         }
     }
 
-    logger.debug(`Alert passed filter: Grade=${grade ?? "N/A"}, Bias=${bias ?? "N/A"}, Swing=${swing ?? "N/A"}`);
+    logger.debug(`Alert passed filter: GradeLetter=${gradeLetter ?? "?"}, GradeNumber=${gradeNumber ?? "?"}, group=${g}`);
     return true;
 };
 
@@ -254,9 +277,10 @@ export const listen = (): void => {
                             things.content += attachments.map((a: APIAttachment) => a.url).join("\n");
                         }
                     }
-                    // Filter: only forward alerts matching Grade>=9.0 and Bias/Swing aligned
+                    // Per-group filter: premium / a-only / grade-only / no-filter
                     const firstEmbedDesc = embeds.length > 0 ? embeds[0].description : undefined;
-                    if (!shouldSendAlert(firstEmbedDesc)) {
+                    const group = channelFilterMap.get(d.channel_id);
+                    if (!shouldSendAlert(firstEmbedDesc, group)) {
                         logger.debug("Alert skipped by filter.");
                         break;
                     }

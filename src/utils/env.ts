@@ -11,7 +11,7 @@ export const useWebhookProfile: boolean = process.env.USE_WEBHOOK_PROFILE?.toLow
 export const debugMode: boolean = process.env.DEBUG_MODE?.toLowerCase() === "yes";
 
 export const enableGrade: number = Number.parseFloat(process.env.ENABLE_GRADE ?? "0") || 0;
-export const enableSameBiasSwing: boolean = process.env.ENABLE_SAME_BIAS_SWING?.toLowerCase() === "yes";
+export const filterGroups: string[] = parseEnvValue(process.env.FILTER_GROUPS ?? "");
 
 export const headers = {
     "Content-Type": "application/json",
@@ -19,6 +19,7 @@ export const headers = {
 };
 
 export const channelWebhookMap = new Map<string, string>();
+export const channelFilterMap = new Map<string, string>();
 for (const [i, channelId] of channelsId.entries()) {
     const webhook = webhooksUrl[i];
     if (webhook === undefined) {
@@ -26,8 +27,16 @@ for (const [i, channelId] of channelsId.entries()) {
     } else {
         channelWebhookMap.set(channelId, webhook);
     }
+
+    const group = filterGroups[i];
+    if (group !== undefined && group.length > 0) {
+        channelFilterMap.set(channelId, group.toLowerCase());
+    }
 }
 
 if (webhooksUrl.length > channelsId.length) {
     console.warn(`Warning: ${webhooksUrl.length - channelsId.length} extra webhook URL(s) will not be used`);
+}
+if (filterGroups.length > channelsId.length) {
+    console.warn(`Warning: ${filterGroups.length - channelsId.length} extra filter group(s) will not be used`);
 }
