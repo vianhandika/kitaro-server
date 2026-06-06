@@ -10,6 +10,9 @@ export const enableBotIndicator: boolean = process.env.ENABLE_BOT_INDICATOR?.toL
 export const useWebhookProfile: boolean = process.env.USE_WEBHOOK_PROFILE?.toLowerCase() === "yes";
 export const debugMode: boolean = process.env.DEBUG_MODE?.toLowerCase() === "yes";
 
+export const enableGrade: number = Number.parseFloat(process.env.ENABLE_GRADE ?? "0") || 0;
+export const enableSameBiasSwing: boolean = process.env.ENABLE_SAME_BIAS_SWING?.toLowerCase() === "yes";
+
 export const headers = {
     "Content-Type": "application/json",
     Authorization: `Bot ${discordToken}`

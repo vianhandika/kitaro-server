@@ -16,7 +16,7 @@ const readTail = async (filePath: string, maxLines = 200): Promise<string> => {
 };
 
 export const startServer = (): void => {
-    const port = Number(process.env.PORT ?? 3000);
+    const port = Number(process.env.PORT ?? 3010);
     const server = createServer(async (req, res) => {
         const urlStr = req.url ?? "/";
         const url = new URL(urlStr, `http://localhost:${port}`);

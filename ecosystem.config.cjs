@@ -9,7 +9,7 @@ module.exports = {
                 WEBHOOKS_URL: "https://discord.com/api/webhooks/WEBHOOK_ID/WEBHOOK_TOKEN",
                 ENABLE_BOT_INDICATOR: "yes",
                 USE_WEBHOOK_PROFILE: "no",
-                DEBUG_MODE: "no",
+                DEBUG_MODE: "yes",
             }
         }
     ]

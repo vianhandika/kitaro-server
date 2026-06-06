@@ -9,12 +9,60 @@ import { WebhookClient, GatewayDispatchEvents, GatewayOpcodes } from "discord.js
 import Websocket from "ws";
 
 import type { DiscordWebhook, Things } from "../typings/index.js";
-import { channelsId, discordToken, channelWebhookMap, enableBotIndicator, headers, useWebhookProfile } from "../utils/env.js";
+import { channelsId, discordToken, channelWebhookMap, enableBotIndicator, enableGrade, enableSameBiasSwing, headers, useWebhookProfile } from "../utils/env.js";
 import logger from "../utils/logger.js";
 
 export const executeWebhook = async (things: Things): Promise<void> => {
     const wsClient = new WebhookClient({ url: things.url });
     await wsClient.send(things);
+};
+
+/**
+ * Parses the embed description to check if this alert should be forwarded.
+ * Controlled by env vars:
+ *   - ENABLE_GRADE (number): minimum grade threshold; 0 = skip grade filter
+ *   - ENABLE_SAME_BIAS_SWING (yes/no): enforce Bias↔Swing alignment
+ */
+const shouldSendAlert = (description: string | undefined): boolean => {
+    // If both filters are disabled, allow everything
+    if (enableGrade === 0 && !enableSameBiasSwing) return true;
+    if (description === undefined) return false;
+
+    const gradeMatch = /\*\*Grade:\*\*\s*\S+\s*·\s*([\d.]+)/iu.exec(description);
+    const biasMatch = /\*\*Bias:\*\*\s*\S+\s*(Long|Short)/iu.exec(description);
+    const swingMatch = /\*\*Swing:\*\*\s*\S+\s*(Bullish|Bearish)/iu.exec(description);
+
+    const grade = gradeMatch === null ? null : Number.parseFloat(gradeMatch[1]);
+    const bias = biasMatch === null ? null : biasMatch[1].toLowerCase();
+    const swing = swingMatch === null ? null : swingMatch[1].toLowerCase();
+
+    // Grade filter (only when enabled)
+    if (enableGrade > 0) {
+        if (grade === null) {
+            logger.debug("Alert filter: missing grade in description, skipping.");
+            return false;
+        }
+        if (grade < enableGrade) {
+            logger.debug(`Alert filtered out: Grade ${grade} < ${enableGrade}`);
+            return false;
+        }
+    }
+
+    // Bias/Swing alignment filter (only when enabled)
+    if (enableSameBiasSwing) {
+        if (bias === null || swing === null) {
+            logger.debug("Alert filter: missing bias/swing in description, skipping.");
+            return false;
+        }
+        const aligned = (bias === "long" && swing === "bullish") || (bias === "short" && swing === "bearish");
+        if (!aligned) {
+            logger.debug(`Alert filtered out: Bias=${bias}, Swing=${swing} not aligned`);
+            return false;
+        }
+    }
+
+    logger.debug(`Alert passed filter: Grade=${grade ?? "N/A"}, Bias=${bias ?? "N/A"}, Swing=${swing ?? "N/A"}`);
+    return true;
 };
 
 let ws: Websocket;
@@ -206,6 +254,14 @@ export const listen = (): void => {
                             things.content += attachments.map((a: APIAttachment) => a.url).join("\n");
                         }
                     }
+                    // Filter: only forward alerts matching Grade>=9.0 and Bias/Swing aligned
+                    const firstEmbedDesc = embeds.length > 0 ? embeds[0].description : undefined;
+                    if (!shouldSendAlert(firstEmbedDesc)) {
+                        logger.debug("Alert skipped by filter.");
+                        break;
+                    }
+
+                    logger.debug(`Sending to webhook: ${JSON.stringify(things)}`);
                     await executeWebhook(things);
                 }
                 break;
