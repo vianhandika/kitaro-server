@@ -39,13 +39,13 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
     const gradeLetter = gradeMatch?.groups?.letter === undefined ? null : gradeMatch.groups.letter.toUpperCase();
     const gradeNumber = gradeMatch?.groups?.number === undefined ? null : Number.parseFloat(gradeMatch.groups.number);
 
-    // a-only: only check letter
+    // a-only: check if Grade line contains "A"
     if (g === "a-only") {
-        if (gradeLetter !== "A") {
-            logger.debug(`Alert filtered out: Grade letter ${gradeLetter ?? "?"} is not A (group=a-only)`);
+        if (!/\*\*Grade:.*a/i.test(description)) {
+            logger.debug("Alert filtered out: Grade does not contain A (group=a-only)");
             return false;
         }
-        logger.debug("Alert passed filter: Grade letter A (group=a-only)");
+        logger.debug("Alert passed filter: Grade contains A (group=a-only)");
         return true;
     }
 
