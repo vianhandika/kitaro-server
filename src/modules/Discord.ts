@@ -35,7 +35,7 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
 
     // Parse grade: captures both the letter and the number
     // Example: "**Grade:** B · 4.6" → letter="B", number=4.6
-    const gradeMatch = /\*\*Grade:\*\*\s*.*?\s*(?<letter>[A-F][+\-]?)\s*·\s*(?<number>[\d.]+)/iu.exec(description);
+    const gradeMatch = /\*\*Grade:\*\*\s*.*?\s*(?<letter>[A-F][+-]?)\s*·\s*(?<number>[\d.]+)/iu.exec(description);
     const gradeLetter = gradeMatch?.groups?.letter === undefined ? null : gradeMatch.groups.letter.toUpperCase();
     const gradeNumber = gradeMatch?.groups?.number === undefined ? null : Number.parseFloat(gradeMatch.groups.number);
     
