@@ -67,8 +67,8 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
 
     // premium only: also enforce bias/swing alignment
     if (g === "premium") {
-        const biasMatch = /\*\*Bias:\*\*\s*\S+\s*(?<bias>Long|Short)/iu.exec(description);
-        const swingMatch = /\*\*Swing:\*\*\s*\S+\s*(?<swing>Bullish|Bearish)/iu.exec(description);
+        const biasMatch = /\*\*Bias:\*\*\s*.*?\s*(?<bias>Long|Short)/iu.exec(description);
+        const swingMatch = /\*\*Swing:\*\*\s*.*?\s*(?<swing>Bullish|Bearish)/iu.exec(description);
 
         const bias = biasMatch?.groups?.bias === undefined ? null : biasMatch.groups.bias.toLowerCase();
         const swing = swingMatch?.groups?.swing === undefined ? null : swingMatch.groups.swing.toLowerCase();
