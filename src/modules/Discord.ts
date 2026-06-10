@@ -76,15 +76,15 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
         }
 
         // Require interval=5
-        if (embedUrl !== undefined) {
-            const intervalMatch = /[?&]interval=(?<interval>\d+)/iu.exec(embedUrl);
-            const interval = intervalMatch?.groups?.interval === undefined ? null : Number.parseInt(intervalMatch.groups.interval, 10);
-            if (interval !== 5) {
-                logger.debug(`Alert filtered out: Interval=${interval ?? "?"} is not 5 (group=premium)`);
-                return false;
-            }
-        } else {
+        if (embedUrl === undefined) {
             logger.debug("Alert filter: missing embed URL, cannot check interval (group=premium).");
+            return false;
+        }
+
+        const intervalMatch = /[?&]interval=(?<interval>\d+)/iu.exec(embedUrl);
+        const interval = intervalMatch?.groups?.interval === undefined ? null : Number.parseInt(intervalMatch.groups.interval, 10);
+        if (interval !== 5) {
+            logger.debug(`Alert filtered out: Interval=${interval ?? "?"} is not 5 (group=premium)`);
             return false;
         }
 
