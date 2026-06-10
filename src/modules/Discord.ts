@@ -26,7 +26,7 @@ type FilterGroup = "a-only" | "grade-only" | "no-filter" | "premium";
  *   grade-only — Grade \>= ENABLE_GRADE only
  *   no-filter  — pass through (no filter)
  */
-const shouldSendAlert = (description: string | undefined, group: string | undefined): boolean => {
+const shouldSendAlert = (description: string | undefined, group: string | undefined, embedUrl?: string): boolean => {
     const g: FilterGroup = (group ?? "no-filter") as FilterGroup;
 
     // no-filter: allow everything
@@ -67,8 +67,27 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
         }
     }
 
-    // premium only: also enforce bias/swing alignment
+    // premium only: also enforce bias/swing alignment, A+ grade, and interval=5
     if (g === "premium") {
+        // Require grade A+
+        if (gradeLetter !== "A+") {
+            logger.debug(`Alert filtered out: Grade ${gradeLetter ?? "?"} is not A+ (group=premium)`);
+            return false;
+        }
+
+        // Require interval=5
+        if (embedUrl !== undefined) {
+            const intervalMatch = /[?&]interval=(?<interval>\d+)/iu.exec(embedUrl);
+            const interval = intervalMatch?.groups?.interval === undefined ? null : Number.parseInt(intervalMatch.groups.interval, 10);
+            if (interval !== 5) {
+                logger.debug(`Alert filtered out: Interval=${interval ?? "?"} is not 5 (group=premium)`);
+                return false;
+            }
+        } else {
+            logger.debug("Alert filter: missing embed URL, cannot check interval (group=premium).");
+            return false;
+        }
+
         const biasMatch = /\*\*Bias:\*\*\s*.*?\s*(?<bias>Long|Short)/iu.exec(description);
         const swingMatch = /\*\*Swing:\*\*\s*.*?\s*(?<swing>Bullish|Bearish)/iu.exec(description);
 
@@ -243,12 +262,13 @@ export const listen = (): void => {
                     }
 
                     const firstEmbedDesc = embeds.length > 0 ? embeds[0].description : undefined;
+                    const firstEmbedUrl = embeds.length > 0 ? embeds[0].url : undefined;
 
                     // Iterate all matching rules (supports same channel → multiple webhooks/filters)
                     /* eslint-disable no-await-in-loop */
                     for (const rule of rules) {
                         // Per-group filter
-                        if (!shouldSendAlert(firstEmbedDesc, rule.group)) {
+                        if (!shouldSendAlert(firstEmbedDesc, rule.group, firstEmbedUrl)) {
                             logger.debug(`Alert skipped by filter (group=${rule.group}).`);
                             continue;
                         }
