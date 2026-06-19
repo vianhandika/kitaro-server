@@ -17,7 +17,7 @@ export const executeWebhook = async (things: Things): Promise<void> => {
     await wsClient.send(things);
 };
 
-type FilterGroup = "a-only" | "grade-only" | "no-filter" | "premium" | "15m-only";
+type FilterGroup = "15m-only" | "a-only" | "grade-only" | "no-filter" | "premium";
 
 /**
  * Per-group alert filtering:
