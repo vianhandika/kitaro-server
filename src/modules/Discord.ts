@@ -17,13 +17,14 @@ export const executeWebhook = async (things: Things): Promise<void> => {
     await wsClient.send(things);
 };
 
-type FilterGroup = "a-only" | "grade-only" | "no-filter" | "premium";
+type FilterGroup = "a-only" | "grade-only" | "no-filter" | "premium" | "15m-only";
 
 /**
  * Per-group alert filtering:
  *   premium    — Grade \>= ENABLE_GRADE  +  Bias/Swing aligned
  *   a-only     — Grade letter is "A"
  *   grade-only — Grade \>= ENABLE_GRADE only
+ *   15m-only   — Interval = 15 only (no grade/bias/swing requirement)
  *   no-filter  — pass through (no filter)
  */
 const shouldSendAlert = (description: string | undefined, group: string | undefined, embedUrl?: string): boolean => {
@@ -31,6 +32,23 @@ const shouldSendAlert = (description: string | undefined, group: string | undefi
 
     // no-filter: allow everything
     if (g === "no-filter") return true;
+
+    // 15m-only: only alerts with interval=15 in the embed URL
+    if (g === "15m-only") {
+        if (embedUrl === undefined) {
+            logger.debug("Alert filtered out: missing embed URL, cannot check interval (group=15m-only)");
+            return false;
+        }
+        const intervalMatch15 = /[?&]interval=(?<interval>\d+)/iu.exec(embedUrl);
+        const interval15 = intervalMatch15?.groups?.interval === undefined ? null : Number.parseInt(intervalMatch15.groups.interval, 10);
+        if (interval15 !== 15) {
+            logger.debug(`Alert filtered out: Interval=${interval15 ?? "?"} is not 15 (group=15m-only)`);
+            return false;
+        }
+        logger.debug("Alert passed filter: interval=15 (group=15m-only)");
+        return true;
+    }
+
     if (description === undefined) return false;
 
     // Parse grade: captures both the letter and the number
