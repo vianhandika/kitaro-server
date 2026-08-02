@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
-import { bybitApiKey, bybitApiSecret, bybitBaseUrl, getPositionIdx } from "../utils/env.js";
 import type { SymbolMeta } from "../typings/index.js";
+import { bybitApiKey, bybitApiSecret, bybitBaseUrl, getPositionIdx } from "../utils/env.js";
 import logger from "../utils/logger.js";
 
 type BybitResponse<T> = {
@@ -41,6 +41,7 @@ const bybitFetch = async <T>(
     };
 
     const url = `${bybitBaseUrl}${endpoint}`;
+    // eslint-disable-next-line no-undef
     const options: RequestInit = { method, headers };
     if (method === "POST" && body) {
         options.body = params;
@@ -64,15 +65,15 @@ const bybitFetch = async <T>(
 export const getInstrumentsInfo = async (symbol: string): Promise<SymbolMeta | null> => {
     const res = await bybitFetch<{
         category: string;
-        list: Array<{
+        list: {
             symbol: string;
             lotSizeFilter: { qtyStep: string; maxOrderQty: string; minOrderQty: string };
             priceFilter: { tickSize: string };
             riskParameters: { limitParameter: string };
-        }>;
+        }[];
     }>("GET", `/v5/market/instruments-info?category=linear&symbol=${symbol}`);
 
-    if (res.retCode !== 0 || !res.result.list || res.result.list.length === 0) {
+    if (res.retCode !== 0 || res.result.list === undefined || res.result.list.length === 0) {
         logger.error(`Failed to get instruments info for ${symbol}: ${res.retMsg}`);
         return null;
     }
@@ -162,17 +163,17 @@ export const setTradingStop = async (payload: BybitSLPayload): Promise<boolean> 
 /**
  * Get open positions for a symbol.
  */
-export const getPositions = async (symbol: string): Promise<Array<{ symbol: string; side: string; size: string }>> => {
+export const getPositions = async (symbol: string): Promise<{ symbol: string; side: string; size: string }[]> => {
     const res = await bybitFetch<{
         category: string;
-        list: Array<{ symbol: string; side: string; size: string }>;
+        list: { symbol: string; side: string; size: string }[];
     }>("GET", `/v5/position/list?category=linear&symbol=${symbol}`);
 
     if (res.retCode !== 0) {
         return [];
     }
 
-    return res.result.list.filter((p) => Number.parseFloat(p.size) > 0);
+    return res.result.list.filter((pos) => Number.parseFloat(pos.size) > 0);
 };
 
 /**
@@ -214,14 +215,15 @@ export const cancelAllOrders = async (symbol: string): Promise<boolean> => {
     logger.info(`Cancelling all open orders for: ${symbol}`);
 
     const res = await bybitFetch<{
-        list: Array<{ orderId: string }>;
+        list: { orderId: string }[];
     }>("GET", `/v5/order/realtime?category=linear&symbol=${symbol}`);
 
-    if (res.retCode !== 0 || !res.result.list || res.result.list.length === 0) {
+    if (res.retCode !== 0 || res.result.list === undefined || res.result.list.length === 0) {
         logger.info(`No open orders to cancel for ${symbol}`);
         return true; // nothing to cancel = success
     }
 
+    // eslint-disable-next-line no-await-in-loop
     for (const order of res.result.list) {
         await bybitFetch<object>(
             "POST",

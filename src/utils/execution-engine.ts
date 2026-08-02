@@ -1,12 +1,15 @@
+/* eslint-disable unicorn/filename-case */
+import { setTimeout } from "node:timers";
+import { getInstrumentsInfo, submitOrder, getPositions, closePosition, cancelAllOrders } from "../modules/Bybit.js";
 import type { ParsedSignal, ExecutionResult } from "../typings/index.js";
 import { maxLossPerTrade, realTrade, strategyType, getPositionIdx } from "./env.js";
-import { roundToStep, roundUpToStep } from "./math.js";
-import { getInstrumentsInfo, submitOrder, getPositions, closePosition, cancelAllOrders } from "../modules/Bybit.js";
 import logger from "./logger.js";
+import { roundToStep, roundUpToStep } from "./math.js";
 
+/* eslint-disable typescript/naming-convention */
 const DELAY_MS = 100;
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = async (ms: number): Promise<void> => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
 
 /**
  * Picks the right TP from the signal based on STRATEGY_TYPE.
@@ -14,13 +17,14 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  */
 const pickTP = (tp: ParsedSignal["tp"]): ParsedSignal["tp"][number] | null => {
     const targetLevel = Number.parseInt(strategyType.replace("TP", ""), 10) || 1;
+    // eslint-disable-next-line id-length
     const match = tp.find((t) => t.level === targetLevel);
     if (match) return match;
 
     // Fallback: use the TP with the lowest level
     const sorted = [...tp].sort((a, b) => a.level - b.level);
     const fallback = sorted[0];
-    if (fallback) {
+    if (fallback !== undefined) {
         logger.info(`STRATEGY_TYPE=${strategyType} not found, falling back to TP${fallback.level}`);
     }
     return fallback ?? null;
@@ -109,12 +113,12 @@ export const executeSignal = async (parsed: ParsedSignal): Promise<ExecutionResu
         orderLinkId: entryId,
         reduceOnly: false,
         positionIdx: getPositionIdx(side),
-        takeProfit: tpPrice !== null ? String(tpPrice) : undefined,
+        takeProfit: tpPrice === null ? undefined : String(tpPrice),
         stopLoss: String(slPrice),
         tpslMode: "Partial",
         tpOrderType: "Limit",
         slOrderType: "Limit",
-        tpLimitPrice: tpPrice !== null ? String(tpPrice) : undefined,
+        tpLimitPrice: tpPrice === null ? undefined : String(tpPrice),
         slLimitPrice: String(slPrice)
     });
 

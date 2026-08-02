@@ -1,11 +1,13 @@
+import { setTimeout, clearTimeout } from "node:timers";
 import { deepseekApiKey } from "./env.js";
 import logger from "./logger.js";
 
+/* eslint-disable typescript/naming-convention */
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const DEEPSEEK_MODEL = "deepseek-v4-flash";
 const TIMEOUT_MS = 10_000;
 
-export type Classification = "Signal" | "Information" | "Followup Signal";
+export type Classification = "Followup Signal" | "Information" | "Signal";
 
 const SYSTEM_PROMPT = `You are a crypto trading signal classifier. Your only job is to classify a Discord message as "Signal", "Followup Signal", or "Information".
 
@@ -71,13 +73,13 @@ export const classifyMessage = async (content: string): Promise<Classification> 
         }
 
         const data = (await response.json()) as {
-            choices?: Array<{ message?: { content?: string } }>;
+            choices?: { message?: { content?: string } }[];
         };
 
         logger.info(`DeepSeek classify response: ${JSON.stringify(data)}`);
 
         const rawContent = data?.choices?.[0]?.message?.content;
-        if (!rawContent) {
+        if (rawContent === undefined || rawContent === null || rawContent === "") {
             logger.warning("DeepSeek returned empty response — defaulting to Information");
             return "Information";
         }

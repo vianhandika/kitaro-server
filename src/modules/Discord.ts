@@ -9,18 +9,18 @@ import { WebhookClient, GatewayDispatchEvents, GatewayOpcodes } from "discord.js
 import Websocket from "ws";
 
 import type { DiscordWebhook, Things } from "../typings/index.js";
-import { channelsId, discordToken, getChannelRules, enableBotIndicator, enableGrade, headers, useWebhookProfile } from "../utils/env.js";
-import logger from "../utils/logger.js";
-import { classifyMessage } from "../utils/deepseek.js";
 import { parseSignal, parseCancelSignal } from "../utils/deepseek-signal-parser.js";
+import { classifyMessage } from "../utils/deepseek.js";
+import { channelsId, discordToken, getChannelRules, enableBotIndicator, enableGrade, headers, useWebhookProfile } from "../utils/env.js";
 import { executeSignal, cancelOrderAndClose } from "../utils/execution-engine.js";
+import logger from "../utils/logger.js";
 
 export const executeWebhook = async (things: Things): Promise<void> => {
     const wsClient = new WebhookClient({ url: things.url });
     await wsClient.send(things);
 };
 
-type FilterGroup = "15m-only" | "a-only" | "grade-only" | "no-filter" | "premium" | "deepseek-classify";
+type FilterGroup = "15m-only" | "a-only" | "deepseek-classify" | "grade-only" | "no-filter" | "premium";
 
 /**
  * Per-group alert filtering:
@@ -325,14 +325,14 @@ export const listen = (): void => {
                                 }
                             } else if (classification === "Followup Signal") {
                                 const cancelledSymbol = await parseCancelSignal(normalizedContent);
-                                if (cancelledSymbol) {
+                                if (cancelledSymbol !== null && cancelledSymbol !== "") {
                                     const result = await cancelOrderAndClose(cancelledSymbol);
                                     const status = result.dryRun ? "📋 DRY-RUN" : (result.success ? "✅" : "❌");
                                     things.content = `[Followup Signal] ${status} ${result.message}\n${normalizedContent}`;
                                 } else {
                                     things.content = `[Followup Signal] ⚠️ Could not identify cancelled symbol\n${normalizedContent}`;
                                 }
-                            } else {
+                            } else if (classification === "Information") {
                                 things.content = `[${classification}] ${normalizedContent}`;
                             }
                         }

@@ -59,10 +59,10 @@ export type ParsedSignal = {
     entry: {
         price: number;
     };
-    tp: Array<{
+    tp: {
         level: number;       // 1-indexed: 1, 2, 3, 4
         price: number;
-    }>;
+    }[];
     sl: {
         price: number;
     };

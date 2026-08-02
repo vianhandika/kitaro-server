@@ -24,7 +24,9 @@ export const bybitPositionMode: string = (process.env.BYBIT_POSITION_MODE ?? "on
 export const maxLossPerTrade: number = Number.parseFloat(process.env.MAX_LOSS_PER_TRADE ?? "50") || 50;
 export const strategyType: string = (process.env.STRATEGY_TYPE ?? "TP2").toUpperCase();
 
-/** Get positionIdx based on account mode and trade side. */
+/**
+ * Get positionIdx based on account mode and trade side.
+ */
 export const getPositionIdx = (side: "Buy" | "Sell"): 0 | 1 | 2 => {
     if (bybitPositionMode === "hedge") {
         return side === "Buy" ? 1 : 2;

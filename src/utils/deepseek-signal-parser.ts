@@ -1,7 +1,10 @@
+/* eslint-disable unicorn/filename-case */
+import { setTimeout, clearTimeout } from "node:timers";
 import type { ParsedSignal } from "../typings/index.js";
 import { deepseekApiKey } from "./env.js";
 import logger from "./logger.js";
 
+/* eslint-disable typescript/naming-convention */
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const DEEPSEEK_MODEL = "deepseek-v4-flash";
 const TIMEOUT_MS = 10_000;
@@ -75,13 +78,13 @@ export const parseSignal = async (content: string): Promise<ParsedSignal | null>
         }
 
         const data = (await response.json()) as {
-            choices?: Array<{ message?: { content?: string } }>;
+            choices?: { message?: { content?: string } }[];
         };
 
         logger.info(`DeepSeek signal parse response: ${JSON.stringify(data)}`);
 
         const rawContent = data?.choices?.[0]?.message?.content;
-        if (!rawContent) {
+        if (rawContent === undefined || rawContent === null || rawContent === "") {
             logger.warning("DeepSeek signal parse returned empty response");
             return null;
         }
@@ -160,17 +163,18 @@ export const parseCancelSignal = async (content: string): Promise<string | null>
 
         if (!response.ok) return null;
 
-        const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+        const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
         logger.info(`DeepSeek cancel parse response: ${JSON.stringify(data)}`);
 
-        const rawContent = data?.choices?.[0]?.message?.content;
-        if (!rawContent) return null;
+        const cancelRaw = data?.choices?.[0]?.message?.content;
+        if (cancelRaw === undefined || cancelRaw === null || cancelRaw === "") return null;
 
-        const parsed = JSON.parse(rawContent) as { symbol: string | null };
-        if (!parsed.symbol) return null;
+        const cancelParsed = JSON.parse(cancelRaw) as { symbol: string | null };
+        if (cancelParsed.symbol === undefined || cancelParsed.symbol === null) return null;
 
         // Normalize: uppercase, add USDT suffix
-        let symbol = parsed.symbol.toUpperCase();
+        let symbol = cancelParsed.symbol.toUpperCase();
+        // eslint-disable-next-line require-unicode-regexp, prefer-named-capture-group
         if (!/(USDT|USDC|BUSD)$/.test(symbol)) symbol += "USDT";
 
         logger.debug(`Cancel signal parsed: ${symbol}`);
