@@ -50,3 +50,41 @@ export type DiscordWebhook = {
     token: string;
     url: string;
 }
+
+// === Signal → Bybit Trading Types ===
+
+export type ParsedSignal = {
+    symbol: string;          // "ONDOUSDT" — normalized, USDT suffix appended if missing
+    side: "LONG" | "SHORT";
+    entry: {
+        price: number;
+    };
+    tp: Array<{
+        level: number;       // 1-indexed: 1, 2, 3, 4
+        price: number;
+    }>;
+    sl: {
+        price: number;
+    };
+};
+
+export type SymbolMeta = {
+    symbol: string;
+    tickSize: number;        // price precision, e.g. 0.0001
+    qtyStep: number;         // quantity precision, e.g. 0.1
+    minOrderQty: number;     // minimum order size, e.g. 1
+    minNotionalUSD: number;  // minimum notional value, e.g. 5
+};
+
+export type ExecutionResult = {
+    success: boolean;
+    symbol: string;
+    side: "LONG" | "SHORT";
+    entryPrice: number;
+    tpPrice: number | null;
+    slPrice: number;
+    qty: number;
+    dryRun: boolean;
+    error?: string;
+    details: string[];
+};

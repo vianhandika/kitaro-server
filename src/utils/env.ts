@@ -13,6 +13,25 @@ export const debugMode: boolean = process.env.DEBUG_MODE?.toLowerCase() === "yes
 export const enableGrade: number = Number.parseFloat(process.env.ENABLE_GRADE ?? "0") || 0;
 export const filterGroups: string[] = parseEnvValue(process.env.FILTER_GROUPS ?? "");
 
+export const deepseekApiKey: string = process.env.DEEPSEEK_API_KEY ?? "";
+
+export const realTrade: boolean = process.env.REAL_TRADE?.toLowerCase() === "yes";
+export const bybitBaseUrl: string = process.env.BYBIT_BASE_URL ?? "https://api.bybit.com";
+export const bybitApiKey: string = process.env.BYBIT_API_KEY ?? "";
+export const bybitApiSecret: string = process.env.BYBIT_API_SECRET ?? "";
+export const bybitAccountType: string = process.env.BYBIT_ACCOUNT_TYPE ?? "unified";
+export const bybitPositionMode: string = (process.env.BYBIT_POSITION_MODE ?? "one-way").toLowerCase();
+export const maxLossPerTrade: number = Number.parseFloat(process.env.MAX_LOSS_PER_TRADE ?? "50") || 50;
+export const strategyType: string = (process.env.STRATEGY_TYPE ?? "TP2").toUpperCase();
+
+/** Get positionIdx based on account mode and trade side. */
+export const getPositionIdx = (side: "Buy" | "Sell"): 0 | 1 | 2 => {
+    if (bybitPositionMode === "hedge") {
+        return side === "Buy" ? 1 : 2;
+    }
+    return 0; // one-way mode
+};
+
 export const headers = {
     "Content-Type": "application/json",
     Authorization: `Bot ${discordToken}`

@@ -11,13 +11,16 @@ import Websocket from "ws";
 import type { DiscordWebhook, Things } from "../typings/index.js";
 import { channelsId, discordToken, getChannelRules, enableBotIndicator, enableGrade, headers, useWebhookProfile } from "../utils/env.js";
 import logger from "../utils/logger.js";
+import { classifyMessage } from "../utils/deepseek.js";
+import { parseSignal, parseCancelSignal } from "../utils/deepseek-signal-parser.js";
+import { executeSignal, cancelOrderAndClose } from "../utils/execution-engine.js";
 
 export const executeWebhook = async (things: Things): Promise<void> => {
     const wsClient = new WebhookClient({ url: things.url });
     await wsClient.send(things);
 };
 
-type FilterGroup = "15m-only" | "a-only" | "grade-only" | "no-filter" | "premium";
+type FilterGroup = "15m-only" | "a-only" | "grade-only" | "no-filter" | "premium" | "deepseek-classify";
 
 /**
  * Per-group alert filtering:
@@ -26,12 +29,13 @@ type FilterGroup = "15m-only" | "a-only" | "grade-only" | "no-filter" | "premium
  *   grade-only — Grade \>= ENABLE_GRADE only
  *   15m-only   — Interval = 15 only (no grade/bias/swing requirement)
  *   no-filter  — pass through (no filter)
+ *   deepseek-classify — pass through (classified later by AI)
  */
 const shouldSendAlert = (description: string | undefined, group: string | undefined, embedUrl?: string): boolean => {
     const g: FilterGroup = (group ?? "no-filter") as FilterGroup;
 
-    // no-filter: allow everything
-    if (g === "no-filter") return true;
+    // no-filter & deepseek-classify: allow everything
+    if (g === "no-filter" || g === "deepseek-classify") return true;
 
     // 15m-only: only alerts with interval=15 in the embed URL
     if (g === "15m-only") {
@@ -300,6 +304,38 @@ export const listen = (): void => {
                             url: rule.webhook,
                             username: `${username}${discriminator ?? ""}${enableBotIndicator ? ub : ""}`
                         };
+
+                        // DeepSeek classify: prepend [Signal], [Followup Signal], or [Information] prefix
+                        // Signal: parse & execute trade on Bybit
+                        // Followup Signal: close position on Bybit
+                        if (rule.group === "deepseek-classify") {
+                            const classification = await classifyMessage(normalizedContent);
+
+                            if (classification === "Signal") {
+                                const parsed = await parseSignal(normalizedContent);
+                                if (parsed) {
+                                    const result = await executeSignal(parsed);
+                                    const status = result.dryRun ? "📋 DRY-RUN" : (result.success ? "✅" : "❌");
+                                    const summary = result.dryRun
+                                        ? `[DRY-RUN] ${parsed.symbol} ${parsed.side}: entry=${result.entryPrice} SL=${result.slPrice} TP=${result.tpPrice ?? "N/A"} qty=${result.qty}`
+                                        : `${result.symbol} ${result.side}: entry=${result.entryPrice} SL=${result.slPrice} TP=${result.tpPrice ?? "N/A"} qty=${result.qty}`;
+                                    things.content = `[Signal] ${status} ${summary}\n${normalizedContent}`;
+                                } else {
+                                    things.content = `[Signal] ⚠️ Parse failed — forwarded as-is\n${normalizedContent}`;
+                                }
+                            } else if (classification === "Followup Signal") {
+                                const cancelledSymbol = await parseCancelSignal(normalizedContent);
+                                if (cancelledSymbol) {
+                                    const result = await cancelOrderAndClose(cancelledSymbol);
+                                    const status = result.dryRun ? "📋 DRY-RUN" : (result.success ? "✅" : "❌");
+                                    things.content = `[Followup Signal] ${status} ${result.message}\n${normalizedContent}`;
+                                } else {
+                                    things.content = `[Followup Signal] ⚠️ Could not identify cancelled symbol\n${normalizedContent}`;
+                                }
+                            } else {
+                                things.content = `[${classification}] ${normalizedContent}`;
+                            }
+                        }
 
                         if (useWebhookProfile) {
                             const webhookData = await fetch(rule.webhook, {
