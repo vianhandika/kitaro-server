@@ -4,7 +4,7 @@ import { getInstrumentsInfo, submitOrder, getPositions, closePosition, cancelAll
 import type { ParsedSignal, ExecutionResult } from "../typings/index.js";
 import { maxLossPerTrade, realTrade, strategyType, getPositionIdx } from "./env.js";
 import logger from "./logger.js";
-import { roundToStep, roundUpToStep } from "./math.js";
+import { roundToStep, roundUpToStep, roundToStepStr, roundUpToStepStr } from "./math.js";
 
 /* eslint-disable typescript/naming-convention */
 const DELAY_MS = 100;
@@ -144,19 +144,19 @@ export const executeSignal = async (parsed: ParsedSignal): Promise<ExecutionResu
         symbol,
         side,
         orderType: "Limit",
-        qty: String(qty),
-        price: String(entryPrice),
+        qty: roundUpToStepStr(qty, meta.qtyStep),
+        price: roundToStepStr(entryPrice, meta.tickSize),
         timeInForce: "GTC",
         orderLinkId: entryId,
         reduceOnly: false,
         positionIdx: getPositionIdx(side),
-        takeProfit: tpPrice === null ? undefined : String(tpPrice),
-        stopLoss: String(slPrice),
+        takeProfit: tpPrice === null ? undefined : roundToStepStr(tpPrice, meta.tickSize),
+        stopLoss: roundToStepStr(slPrice, meta.tickSize),
         tpslMode: "Partial",
         tpOrderType: "Limit",
         slOrderType: "Limit",
-        tpLimitPrice: tpPrice === null ? undefined : String(tpPrice),
-        slLimitPrice: String(slPrice)
+        tpLimitPrice: tpPrice === null ? undefined : roundToStepStr(tpPrice, meta.tickSize),
+        slLimitPrice: roundToStepStr(slPrice, meta.tickSize)
     });
 
     if (!entryOk) {
