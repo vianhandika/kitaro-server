@@ -9,6 +9,40 @@ import { roundToStep, roundUpToStep } from "./math.js";
 /* eslint-disable typescript/naming-convention */
 const DELAY_MS = 100;
 
+/**
+ * Maps base coin symbols to Bybit's actual contract symbols.
+ * Some low-price tokens use 1000 or 10000 lot sizes on Bybit
+ * (e.g. "BONKUSDT" → "1000BONKUSDT", "SATSUSDT" → "10000SATSUSDT").
+ */
+const SYMBOL_MAP: Record<string, string> = {
+    // 1000-prefix pairs (1 contract = 1,000 tokens)
+    BONKUSDT: "1000BONKUSDT",
+    PEPEUSDT: "1000PEPEUSDT",
+    FLOKIUSDT: "1000FLOKIUSDT",
+    LUNCUSDT: "1000LUNCUSDT",
+    XECUSDT: "1000XECUSDT",
+    RATSUSDT: "1000RATSUSDT",
+    TURBOUSDT: "1000TURBOUSDT",
+    BTTUSDT: "1000BTTUSDT",
+    // 10000-prefix pair (1 contract = 10,000 tokens)
+    SATSUSDT: "10000SATSUSDT",
+    // Ticker rename (token known as "PUMP" but Bybit uses "PUMPFUN")
+    PUMPUSDT: "PUMPFUNUSDT",
+};
+
+/**
+ * Normalize a trading symbol to match Bybit's actual contract naming.
+ * Returns the mapped symbol if a known mapping exists, otherwise the original.
+ */
+const normalizeSymbol = (symbol: string): string => {
+    const mapped = SYMBOL_MAP[symbol];
+    if (mapped) {
+        logger.info(`Symbol normalized: ${symbol} → ${mapped}`);
+        return mapped;
+    }
+    return symbol;
+};
+
 const delay = async (ms: number): Promise<void> => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
 
 /**
@@ -44,10 +78,13 @@ export const executeSignal = async (parsed: ParsedSignal): Promise<ExecutionResu
     const details: string[] = [];
     const dryRun = !realTrade;
 
+    // Normalize symbol for Bybit (e.g. BONKUSDT → 1000BONKUSDT)
+    const symbol = normalizeSymbol(parsed.symbol);
+
     // 1. Fetch symbol metadata
-    const meta = await getInstrumentsInfo(parsed.symbol);
+    const meta = await getInstrumentsInfo(symbol);
     if (!meta) {
-        return { success: false, symbol: parsed.symbol, side: parsed.side, entryPrice: parsed.entry.price, tpPrice: null, slPrice: parsed.sl.price, qty: 0, dryRun, error: "Failed to fetch symbol metadata", details };
+        return { success: false, symbol, side: parsed.side, entryPrice: parsed.entry.price, tpPrice: null, slPrice: parsed.sl.price, qty: 0, dryRun, error: "Failed to fetch symbol metadata", details };
     }
 
     details.push(`TickSize=${meta.tickSize}, QtyStep=${meta.qtyStep}`);
@@ -55,7 +92,7 @@ export const executeSignal = async (parsed: ParsedSignal): Promise<ExecutionResu
     // 2. Calculate quantity: qty = maxLossPerTrade / |entry - sl|
     const lossPerUnit = Math.abs(parsed.entry.price - parsed.sl.price);
     if (lossPerUnit <= 0) {
-        return { success: false, symbol: parsed.symbol, side: parsed.side, entryPrice: parsed.entry.price, tpPrice: null, slPrice: parsed.sl.price, qty: 0, dryRun, error: "SL equals entry — cannot calculate quantity", details };
+        return { success: false, symbol, side: parsed.side, entryPrice: parsed.entry.price, tpPrice: null, slPrice: parsed.sl.price, qty: 0, dryRun, error: "SL equals entry — cannot calculate quantity", details };
     }
 
     let qty = maxLossPerTrade / lossPerUnit;
@@ -75,26 +112,26 @@ export const executeSignal = async (parsed: ParsedSignal): Promise<ExecutionResu
     const side = parsed.side === "LONG" ? "Buy" as const : "Sell" as const;
 
     if (dryRun) {
-        details.push(`[DRY-RUN] Would submit: ${parsed.symbol} ${side} qty=${qty} entry=${entryPrice} SL=${slPrice} TP=${tpPrice ?? "N/A"}`);
-        logger.info(`[DRY-RUN] ${parsed.symbol} ${parsed.side}: entry=${entryPrice}, SL=${slPrice}, TP=${tpPrice}, qty=${qty}`);
-        return { success: true, symbol: parsed.symbol, side: parsed.side, entryPrice, tpPrice, slPrice, qty, dryRun, details };
+        details.push(`[DRY-RUN] Would submit: ${symbol} ${side} qty=${qty} entry=${entryPrice} SL=${slPrice} TP=${tpPrice ?? "N/A"}`);
+        logger.info(`[DRY-RUN] ${symbol} ${parsed.side}: entry=${entryPrice}, SL=${slPrice}, TP=${tpPrice}, qty=${qty}`);
+        return { success: true, symbol, side: parsed.side, entryPrice, tpPrice, slPrice, qty, dryRun, details };
     }
 
     // 4. REAL TRADE
     // Cancel ALL open orders for this symbol (both Buy and Sell, TP/SL)
     details.push("Cancelling all open orders...");
-    await cancelAllOrders(parsed.symbol);
+    await cancelAllOrders(symbol);
     details.push("Open orders cancelled");
 
     // Close any existing position (use actual position side, not signal direction)
-    const positions = await getPositions(parsed.symbol);
+    const positions = await getPositions(symbol);
     if (positions.length > 0) {
         const existingSide = positions[0].side as "Buy" | "Sell";
         details.push(`Existing ${existingSide} position found, closing...`);
-        const closed = await closePosition(parsed.symbol, existingSide);
+        const closed = await closePosition(symbol, existingSide);
         if (!closed) {
             details.push("Failed to close existing position — aborting");
-            return { success: false, symbol: parsed.symbol, side: parsed.side, entryPrice, tpPrice, slPrice, qty, dryRun, error: "Failed to close existing position", details };
+            return { success: false, symbol, side: parsed.side, entryPrice, tpPrice, slPrice, qty, dryRun, error: "Failed to close existing position", details };
         }
         details.push(`Existing ${existingSide} position closed`);
         await delay(DELAY_MS);
@@ -104,7 +141,7 @@ export const executeSignal = async (parsed: ParsedSignal): Promise<ExecutionResu
     const entryId = `ENTRY-${Date.now()}`;
     const entryOk = await submitOrder({
         category: "linear",
-        symbol: parsed.symbol,
+        symbol,
         side,
         orderType: "Limit",
         qty: String(qty),
@@ -123,13 +160,13 @@ export const executeSignal = async (parsed: ParsedSignal): Promise<ExecutionResu
     });
 
     if (!entryOk) {
-        return { success: false, symbol: parsed.symbol, side: parsed.side, entryPrice, tpPrice, slPrice, qty, dryRun, error: "Entry order failed", details };
+        return { success: false, symbol, side: parsed.side, entryPrice, tpPrice, slPrice, qty, dryRun, error: "Entry order failed", details };
     }
     details.push(`Entry + TP/SL placed: entry=${entryPrice} SL=${slPrice} TP=${tpPrice ?? "N/A"}`);
 
     return {
         success: true,
-        symbol: parsed.symbol,
+        symbol,
         side: parsed.side,
         entryPrice,
         tpPrice,
@@ -150,8 +187,9 @@ export type CancelResult = {
 /**
  * Cancel all open orders + close position for a symbol (followup signal).
  */
-export const cancelOrderAndClose = async (symbol: string): Promise<CancelResult> => {
+export const cancelOrderAndClose = async (rawSymbol: string): Promise<CancelResult> => {
     const dryRun = !realTrade;
+    const symbol = normalizeSymbol(rawSymbol);
 
     if (dryRun) {
         logger.info(`[DRY-RUN] Would cancel orders & close position for: ${symbol}`);
