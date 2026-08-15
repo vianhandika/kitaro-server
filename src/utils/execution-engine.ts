@@ -28,7 +28,8 @@ const SYMBOL_MAP: Record<string, string> = {
     SATSUSDT: "10000SATSUSDT",
     // Ticker rename (token known as "PUMP" but Bybit uses "PUMPFUN")
     PUMPUSDT: "PUMPFUNUSDT",
-    SHIBUSDT: "SHIB1000USDT" // Bybit uses "SHIB1000USDT" instead of "SHIBUSDT"
+    SHIBUSDT: "SHIB1000USDT", // Bybit uses "SHIB1000USDT" instead of "SHIBUSDT"
+    '1000SHIBUSDT': "SHIB1000USDT" // Bybit uses "SHIB1000USDT" instead of "1000SHIBUSDT"
 };
 
 /**
