@@ -20,7 +20,7 @@ export const executeWebhook = async (things: Things): Promise<void> => {
     await wsClient.send(things);
 };
 
-type FilterGroup = "15m-only" | "a-only" | "deepseek-classify" | "grade-only" | "no-filter" | "premium";
+type FilterGroup = "15m-only" | "a-only" | "ao_signal" | "deepseek-classify" | "grade-only" | "no-filter" | "premium";
 
 /**
  * Per-group alert filtering:
@@ -30,12 +30,30 @@ type FilterGroup = "15m-only" | "a-only" | "deepseek-classify" | "grade-only" | 
  *   15m-only   — Interval = 15 only (no grade/bias/swing requirement)
  *   no-filter  — pass through (no filter)
  *   deepseek-classify — pass through (classified later by AI)
+ *   ao_signal  — full AO Voyager signal cards (brand + LONG/SHORT SIGNAL + ENTRY + STOP LOSS + TP1)
  */
-const shouldSendAlert = (description: string | undefined, group: string | undefined, embedUrl?: string): boolean => {
+const shouldSendAlert = (description: string | undefined, content: string | undefined, group: string | undefined, embedUrl?: string): boolean => {
     const g: FilterGroup = (group ?? "no-filter") as FilterGroup;
 
     // no-filter & deepseek-classify: allow everything
     if (g === "no-filter" || g === "deepseek-classify") return true;
+
+    // ao_signal: only full AO Voyager signal cards (brand + direction + ENTRY + STOP LOSS + TP1)
+    if (g === "ao_signal") {
+        const text = `${content ?? ""}\n${description ?? ""}`;
+        const isAoVoyager = /AO Voyager/iu.test(text);
+        const hasDirection = /(?:LONG|SHORT)\s*SIGNAL/iu.test(text);
+        const hasEntry = /\bENTRY\b/iu.test(text);
+        const hasStopLoss = /\bSTOP LOSS\b/iu.test(text);
+        const hasTp1 = /TP1\b/iu.test(text);
+
+        if (!isAoVoyager || !hasDirection || !hasEntry || !hasStopLoss || !hasTp1) {
+            logger.debug("Alert filtered out: not a full AO Voyager signal (group=ao_signal)");
+            return false;
+        }
+        logger.debug("Alert passed filter: AO Voyager signal (group=ao_signal)");
+        return true;
+    }
 
     // 15m-only: only alerts with interval=15 in the embed URL
     if (g === "15m-only") {
@@ -290,7 +308,7 @@ export const listen = (): void => {
                     /* eslint-disable no-await-in-loop */
                     for (const rule of rules) {
                         // Per-group filter
-                        if (!shouldSendAlert(firstEmbedDesc, rule.group, firstEmbedUrl)) {
+                        if (!shouldSendAlert(firstEmbedDesc, normalizedContent, rule.group, firstEmbedUrl)) {
                             logger.debug(`Alert skipped by filter (group=${rule.group}).`);
                             continue;
                         }
@@ -335,6 +353,11 @@ export const listen = (): void => {
                             } else if (classification === "Information") {
                                 things.content = `[${classification}] ${normalizedContent}`;
                             }
+                        }
+
+                        // ao_signal: mention everyone in the receiving channel
+                        if (rule.group === "ao_signal") {
+                            things.content = `@everyone ${things.content}`;
                         }
 
                         if (useWebhookProfile) {
